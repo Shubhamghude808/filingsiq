@@ -4,6 +4,7 @@ from filingsiq.ingestion.edgar_client import RawFiling, fetch_10ks
 from filingsiq.ingestion.embedder import embed
 from filingsiq.ingestion.parser import html_to_text, split_sections
 
+
 def already_ingested(accession_no: str) -> bool:
     with get_conn() as conn:
         row = conn.execute(

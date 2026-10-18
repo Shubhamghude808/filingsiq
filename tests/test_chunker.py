@@ -1,6 +1,6 @@
 from filingsiq.ingestion.chunker import chunk_text
-from filingsiq.retrieval.hybrid import _or_query
 from filingsiq.ingestion.parser import split_sections
+from filingsiq.retrieval.hybrid import _or_query
 
 
 def test_chunk_overlap():

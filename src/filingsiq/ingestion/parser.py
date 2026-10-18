@@ -1,5 +1,7 @@
 ﻿import re
+
 from bs4 import BeautifulSoup
+
 ITEM_RE = re.compile(r"^\s*item\s+(\d+[abc]?)\.?\s*[-–—:.]?\s*(.*)$", re.IGNORECASE)
 FOOTER_RE = re.compile(r"[A-Z][\w.,&' ]{0,40}\|\s*\d{4} Form 10-[KQ]\s*\|\s*\d+")
 # A line is a section heading only if its title matches the standard 10-K title.

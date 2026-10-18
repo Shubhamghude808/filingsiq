@@ -4,15 +4,19 @@ expected fiscal year if the question names one. With --strict, the chunk must al
 contain at least one `must_contain` phrase (when the question defines any).
 Usage:
   python -m filingsiq.evals.run_evals                  # comparison table
+  python -m filingsiq.evals.run_evals --rerank         # add hybrid + cross-encoder rows
   python -m filingsiq.evals.run_evals --strict         # require the answer text
-  python -m filingsiq.evals.run_evals --verbose        # per-question ranks
+  python -m filingsiq.evals.run_evals --verbose        # per-question ranks (hybrid + year)
   python -m filingsiq.evals.run_evals --check-golden   # validate must_contain phrases
 """
 import argparse
 import json
+import time
 from pathlib import Path
+
 from filingsiq.db import get_conn
 from filingsiq.retrieval.hybrid import search
+
 GOLDEN = Path(__file__).parent / "golden" / "questions.jsonl"
 K = 10  # keep fixed so runs are comparable
 SETS = ["original", "paraphrase", "msft", "nvda", "cross"]
@@ -35,9 +39,11 @@ def is_hit(q: dict, r: dict, strict: bool = False) -> bool:
         text = r["text"].lower()
         return any(p.lower() in text for p in q["must_contain"])
     return True
-def first_hit_rank(q: dict, mode: str, use_year: bool, strict: bool) -> int | None:
+def first_hit_rank(q: dict, mode: str, use_year: bool, strict: bool,
+                   rerank: bool = False) -> int | None:
     fy = q.get("fiscal_year") if use_year else None
-    for rank, r in enumerate(search(q["question"], q.get("ticker"), K, fy, mode), 1):
+    results = search(q["question"], q.get("ticker"), K, fy, mode, rerank=rerank)
+    for rank, r in enumerate(results, 1):
         if is_hit(q, r, strict):
             return rank
     return None
@@ -72,33 +78,48 @@ def check_golden(qs: list[dict]) -> None:
                 bad += 1
                 print(f"NO MATCH  {q['id']}  {_tickers(q)}  {q['expected_section']}  {phrases}")
     print(f"\n{bad} question(s) have no chunk containing their must_contain phrases.")
+def warm_up(rerank: bool) -> None:
+    """Load the embedder (and reranker) once so timings exclude model loading."""
+    search("warm up", "AAPL", K, None, "hybrid", rerank=rerank)
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--strict", action="store_true")
     ap.add_argument("--check-golden", action="store_true")
+    ap.add_argument("--rerank", action="store_true",
+                    help="add hybrid + cross-encoder rows (year filter on)")
     args = ap.parse_args()
     qs = load_questions()
     if args.check_golden:
         check_golden(qs)
     elif args.verbose:
+        warm_up(args.rerank)
         ranks = []
         for q in qs:
-            rank = first_hit_rank(q, "hybrid", True, args.strict)
+            rank = first_hit_rank(q, "hybrid", True, args.strict, args.rerank)
             ranks.append(rank)
             print(f"{q['id']} {q.get('set', 'original'):10} rank={rank}  "
                   f"{q['expected_section']}  {q['question'][:50]}")
+        print(f"rerank={args.rerank}")
         print(json.dumps(summarize(ranks), indent=2))
     else:
-        print(f"{'mode':8} {'year':6} {'set':11} {'n':>3} {'r@1':>5} {'r@3':>5} {'r@5':>5} {'mrr':>6}")
-        for mode in ("vector", "keyword", "hybrid"):
-            for use_year in (False, True):
-                ranks = [first_hit_rank(q, mode, use_year, args.strict) for q in qs]
-                for s in SETS:
-                    sub = [r for r, q in zip(ranks, qs) if q.get("set", "original") == s]
-                    if not sub:
-                        continue
-                    m = summarize(sub)
-                    print(f"{mode:8} {str(use_year):6} {s:11} {m['n']:3d} "
-                          f"{m['r@1']:5.2f} {m['r@3']:5.2f} {m['r@5']:5.2f} {m['mrr']:6.3f}")
-        print(f"\nk={K}, strict={args.strict}")
+        # (mode, use_year, rerank) configurations, in print order
+        configs = [(m, y, False) for m in ("vector", "keyword", "hybrid") for y in (False, True)]
+        if args.rerank:
+            configs.append(("hybrid", True, True))
+        warm_up(args.rerank)
+        print(f"{'mode':8} {'year':6} {'rerank':7} {'set':11} {'n':>3} "
+              f"{'r@1':>5} {'r@3':>5} {'r@5':>5} {'mrr':>6} {'s/q':>6}")
+        for mode, use_year, rr in configs:
+            t0 = time.perf_counter()
+            ranks = [first_hit_rank(q, mode, use_year, args.strict, rr) for q in qs]
+            per_q = (time.perf_counter() - t0) / max(len(qs), 1)
+            for s in SETS:
+                sub = [r for r, q in zip(ranks, qs) if q.get("set", "original") == s]
+                if not sub:
+                    continue
+                m = summarize(sub)
+                print(f"{mode:8} {use_year!s:6} {rr!s:7} {s:11} {m['n']:3d} "
+                      f"{m['r@1']:5.2f} {m['r@3']:5.2f} {m['r@5']:5.2f} "
+                      f"{m['mrr']:6.3f} {per_q:6.2f}")
+        print(f"\nk={K}, strict={args.strict}, rerank_pool=50")
