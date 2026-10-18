@@ -1,0 +1,27 @@
+[project]
+name = "filingsiq"
+version = "0.1.0"
+description = "SEC filings research agent with measurable accuracy"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110", "uvicorn[standard]>=0.29", "pydantic>=2.6", "pydantic-settings>=2.2",
+  "psycopg[binary,pool]>=3.1", "pgvector>=0.2.5", "redis>=5.0", "celery>=5.3",
+  "edgartools>=2.0", "beautifulsoup4>=4.12", "sentence-transformers>=2.7",
+  "anthropic>=0.40", "openai>=1.0", "langgraph>=0.2", "langfuse>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.9", "pre-commit>=3.7"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
