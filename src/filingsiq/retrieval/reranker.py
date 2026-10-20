@@ -1,7 +1,9 @@
 ﻿"""Cross-encoder reranker. Loaded lazily so plain searches don't pay for it."""
 import os
+
 import torch
 from sentence_transformers import CrossEncoder
+
 DEFAULT_MODEL = "BAAI/bge-reranker-base"
 _model: CrossEncoder | None = None
 def _get_model() -> CrossEncoder:
